@@ -11,9 +11,10 @@ use crate::BoundedIntErr::{BoundError, Invalid};
 
 /// Valid range Not Inclusive meaning that MAX value is invalid
 /// eg. (0..4) is actually valid for values 0,1,2,3 and 4 is not valid.
+/// Upper bound Included(isize::MAX) is not supported because invalidate special value
 pub struct BoundedInt<
     const LOWER: Bound<&'static isize> = { Included(&isize::MIN) },
-    const UPPER: Bound<&'static isize> = { Excluded(&isize::MAX) }> (isize);
+    const UPPER: Bound<&'static isize> = { Excluded(&(isize::MAX)) }> (isize);
 
 pub enum BoundedIntErr {
     BoundError,
@@ -37,7 +38,6 @@ impl<const LOWER: Bound<&'static isize>, const UPPER: Bound<&'static isize>> Bou
     fn get_bounds() -> Range<isize> {
         match (LOWER, UPPER) {
             (Included(start_ref), Excluded(end_ref)) => Range{start: *start_ref, end: *end_ref },
-
             // Pooping todos
             (_,_) => { todo!() } }
     }
@@ -68,6 +68,23 @@ impl<const LOWER: Bound<&'static isize>, const UPPER: Bound<&'static isize>> Bou
             Err(BoundError)
         }
     }
+
+    fn range_to_upper_limit() {
+        todo!()
+    }
+
+    fn range_to_lower_limit() {
+        todo!()
+    }
+
+    fn range_from_upper_limit() {
+        todo!()
+    }
+
+    fn range_from_lower_limit() {
+        todo!()
+    }
+
     // Not sure if once invalidated should be able to be validated, Reset to Default value?
     fn invalidate(&mut self) {
         // is_valid() is now false
@@ -107,8 +124,18 @@ pub trait BoundedIntTrait {
     fn try_set(&mut self, new_value: isize) -> Result<isize, BoundedIntErr>;
     fn try_set_fn(&mut self, set_with_fn: &impl Fn(&mut Self)) -> Result<isize, BoundedIntErr>;
 
+    // These are Exclusive (begin..end) ?? I think the bounds should be actually always both end inclusive
+    // Which is confusing as it's not normal practice
+    fn range_to_upper_limit();
+    fn range_to_lower_limit();
+
+    // These are Inclusive (UPPER+1..=LOWER)
+    fn range_from_upper_limit();
+    fn range_from_lower_limit();
+
     // Can be implemented only if Upper bound is Exclusive
-    // Bug when using Bound<_>
+    // Should this be removed then in favor full RangeInclusive.
+    // With Max range inclusive the value would be always valid.
     fn invalidate(&mut self);
 }
 
@@ -174,16 +201,9 @@ mod tests {
         let mut t = BoundedInt::<{ Included(&isize::MIN) }, { Excluded(&isize::MAX) }>(0);
         b.iter(|| {
             for i in -2000_isize..2000 {
-                // Optimized out or 1.9 ns/iter with black box
+                // Optimized out or 1.9 ns/iter with black box. Half time with &mut Self
                 let _ = t.try_set_fn(&|mut v| {let _ = v.try_set(i);});
             }
         });
-        /*let mut t = BoundedInt::<{ isize::MIN }>(isize::MIN);
-        b.iter(|| {
-            for i in -2000..2000 {
-                // 3.4 ns/iter
-                let _ = t.try_set_fn(&|v| v + i).ok();
-            }
-        });*/
     }
 }
