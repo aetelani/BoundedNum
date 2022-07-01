@@ -9,12 +9,14 @@ use std::ops::{Range, RangeBounds, RangeInclusive, RangeToInclusive};
 use std::ops::Bound::{Excluded, Included};
 use crate::BoundedIntErr::{BoundError, Invalid};
 
+
 /// Valid range Not Inclusive meaning that MAX value is invalid
 /// eg. (0..4) is actually valid for values 0,1,2,3 and 4 is not valid.
 /// Upper bound Included(isize::MAX) is not supported because invalidate special value
 pub struct BoundedInt<
     const LOWER: Bound<&'static isize> = { Included(&isize::MIN) },
     const UPPER: Bound<&'static isize> = { Excluded(&(isize::MAX)) }> (isize);
+
 
 pub enum BoundedIntErr {
     BoundError,
@@ -27,6 +29,16 @@ impl<const LOWER: Bound<&'static isize>, const UPPER: Bound<&'static isize>> Ran
     }
     fn end_bound(&self) -> Bound<&isize> {
         UPPER
+    }
+    fn contains<U>(&self, item: &U) -> bool where isize: PartialOrd<U>, U: ?Sized + PartialOrd<isize> {
+        let _ = item;
+        match self.end_bound() {
+            // Not sure actually how to call this:
+            // Excluded(bound) => { self.0 < bound },
+            //                                 ^^^^^ expected type parameter `U`, found `&isize`
+            Excluded(bound) => { todo!() },
+            _ => {false},
+        }
     }
 }
 
