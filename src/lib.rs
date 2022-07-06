@@ -19,7 +19,7 @@ macro_rules! bound_idx {
         paste! {
             pub trait [<$value_name Trait>] {
                 fn valid(&self) -> bool;
-                fn get_bounds() -> Range<$value_type>;
+                fn get_bounds<const LOWER: $value_type, const UPPER: $value_type>() -> Range<$value_type> { Range { start: LOWER, end: UPPER } }
                 fn try_get(&self) -> Result<$value_type, BoundErr>;
                 fn try_set(&mut self, new_value: $value_type) -> Result<(), BoundErr>;
                 fn try_set_fn(&mut self, set_fn: &impl Fn(&mut Self)) -> Result<(), BoundErr>;
@@ -34,10 +34,7 @@ macro_rules! bound_idx {
             impl<const UPPER: $value_type, const LOWER: $value_type> [<$value_name Trait>]
             for [< $value_name $value_type >]<LOWER, UPPER> {
                 fn valid(&self) -> bool {
-                    LOWER <= self.0 && self.0 < UPPER
-                }
-                fn get_bounds() -> Range<$value_type> {
-                    Range { start: LOWER, end: UPPER }
+                    Self::get_bounds::<LOWER, UPPER>().contains(&self.0)
                 }
                 fn try_get(&self) -> Result<$value_type, BoundErr> {
                     if self.valid() {
@@ -47,7 +44,7 @@ macro_rules! bound_idx {
                     }
                 }
                 fn try_set(&mut self, new_value: $value_type) -> Result<(), BoundErr> {
-                    if [< $value_name $value_type >]::<LOWER, UPPER>::get_bounds().contains(&new_value) {
+                    if Self::get_bounds::<LOWER, UPPER>().contains(&new_value) {
                         self.0 = new_value as $value_type;
                         Ok(())
                     } else {
