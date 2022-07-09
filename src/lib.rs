@@ -6,8 +6,8 @@ use std::collections::Bound;
 use std::env::Args;
 use std::ops::{Range, RangeBounds, RangeInclusive, RangeToInclusive};
 use std::ops::Bound::{Excluded, Included};
-use crate::BoundErr::{BoundError, Invalid};
 use paste::paste;
+use crate::BoundErr::{BoundError, Invalid};
 
 pub enum BoundErr {
     BoundError,
@@ -24,7 +24,7 @@ macro_rules! bound_idx {
                 fn try_set(&mut self, new_value: $value_type) -> Result<(), BoundErr>;
                 fn try_set_fn(&mut self, set_fn: &impl Fn(&mut Self)) -> Result<(), BoundErr>;
                 fn invalidate(&mut self);
-                unsafe fn get(&self) -> $value_type;
+                unsafe fn get_unchecked(&self) -> $value_type;
                 unsafe fn set_unchecked(&mut self, new_value: $value_type);
                 unsafe fn set_fn_unchecked(&mut self, set_fn: &impl Fn(&mut Self));
             }
@@ -32,7 +32,7 @@ macro_rules! bound_idx {
                 const UPPER: $value_type = { <$value_type>::MAX },
                 const LOWER: $value_type = { <$value_type>::MIN }> ($value_type);
             impl<const UPPER: $value_type, const LOWER: $value_type> [<$value_name Trait>]
-            for [< $value_name $value_type >]<LOWER, UPPER> {
+            for [< $value_name $value_type >]<UPPER, LOWER> {
                 fn valid(&self) -> bool {
                     Self::get_bounds::<LOWER, UPPER>().contains(&self.0)
                 }
@@ -69,7 +69,7 @@ macro_rules! bound_idx {
                 unsafe fn set_fn_unchecked(&mut self,set_fn: &impl Fn(&mut Self)) {
                     set_fn(self);
                 }
-                unsafe fn get(&self) -> $value_type {
+                unsafe fn get_unchecked(&self) -> $value_type {
                     self.0
                 }
             }
@@ -77,7 +77,6 @@ macro_rules! bound_idx {
     }
 }
 bound_idx!(B, isize);
-
 
 #[cfg(test)]
 mod tests {
@@ -91,35 +90,37 @@ mod tests {
 
     #[test]
     fn it_jiggles() {
-
-        let t = Bisize::<0,6>(5i8 as isize);
+        let t = Bisize::<6>(5i8 as isize);
         assert!(t.valid());
 
-        let t = Bisize::<{ isize::MIN }, { 5isize }>(5);
+        let t = Bisize::<{ 5 }, { 2isize }>(5);
         assert!(!t.valid());
-        let t = Bisize::<{ isize::MIN }, { 10isize }>(5);
+        let t = Bisize::<{ isize::MAX }>(5);
         assert!(t.valid());
-        assert_eq!(size_of::<Bisize::<{ isize::MIN }, { isize::MAX }>>(), size_of::<isize>());
+        assert_eq!(
+            size_of::<Bisize::<{ isize::MAX }, { isize::MIN }>>(),
+            size_of::<isize>()
+        );
     }
 
     #[bench]
     fn it_folds_unchecked_set_fn(b: &mut Bencher) {
         let mut t = Bisize::<{ isize::MIN }, { isize::MAX }>(0isize);
         b.iter(|| unsafe {
-            for i in -2000_isize..2000 {
+            for i in -2000..2000 {
                 // Optimized out or 1.9 ns/iter with black box
-                let _ = t.set_fn_unchecked(&|mut v| v.set_unchecked(black_box(i)));
+                let _ = t.set_fn_unchecked(&|mut v| v.set_unchecked(i as isize));
             }
         });
     }
 
     #[bench]
     fn it_folds_unchecked_set_fn_bb(b: &mut Bencher) {
-        //let mut t = BoundIdx(isize::MIN);
+        let mut t = Bisize::<{ isize::MIN }, { isize::MAX }>(0isize);
         b.iter(|| unsafe {
             for i in -2000..2000 {
                 // Optimized out or 1.9 ns/iter with black box
-                //let _ = t.set_fn_unchecked(&|v| black_box(v + i));
+                let _ = t.set_fn_unchecked(&|mut v| black_box(v.set_unchecked(i)));
             }
         });
     }
@@ -131,7 +132,9 @@ mod tests {
             for i in -2000isize..2000 {
                 // 1.8 ns/iter with blackbox
                 //let _ = t.try_set_fn(&|v| black_box(v + i));
-                let _ = t.try_set_fn(&|mut v| { v.try_set(black_box(i)).ok(); });
+                let _ = t.try_set_fn(&|mut v| {
+                    v.try_set(black_box(i)).ok();
+                });
             }
         });
     }
@@ -139,12 +142,14 @@ mod tests {
     #[bench]
     fn it_folds_try_set_fn(b: &mut Bencher) {
         // Does not work for unchecked anymore
-        //let mut t = BoundIdx::<{ isize::MIN }, { isize::MAX }>(0);
+        let mut t = Bisize::<{ isize::MIN }, { isize::MAX }>(0isize);
         b.iter(|| {
             for i in -2000_isize..2000 {
                 // Optimized out or 1.9 ns/iter with black box
                 //let _ = t.try_set_fn(&|v| v + i).ok();
-                //let _ = t.try_set_fn(&|mut v| { v.try_set(i).ok(); });
+                let _ = t.try_set_fn(&|mut v| {
+                    v.try_set(i).ok();
+                });
             }
         });
     }
