@@ -22,7 +22,7 @@ macro_rules! bound_idx {
             // new cant be here either as it references mod_name::Value which is const for all
             // I don't think it's good basis for lib. The try_new is good addition tho to test initial values
             fn get_bounds<const LOWER: $value_type, const UPPER: $value_type>() -> Range<$value_type> { Range { start: LOWER, end: UPPER } }
-            fn try_get(&self) -> Result<$value_type, BoundErr>;
+            fn try_get<T: From<$value_type>>(&self) -> Result<T, BoundErr>;
             fn try_set(&mut self, new_value: $value_type) -> Result<(), crate::BoundErr>;
             fn try_set_fn(&mut self, set_fn: &impl Fn(&mut Self)) -> Result<(), crate::BoundErr>;
             fn invalidate(&mut self);
@@ -43,9 +43,9 @@ macro_rules! bound_idx {
                     fn valid(&self) -> bool {
                         Self::get_bounds::<LOWER, UPPER>().contains(&self.0)
                     }
-                    fn try_get(&self) -> Result<$value_type, BoundErr> {
+                    fn try_get<T: From<$value_type>>(&self) -> Result<T, BoundErr> {
                         if self.valid() {
-                            Ok(self.0)
+                            Ok(self.0.into())
                         } else {
                             Err(Invalid)
                         }
@@ -99,6 +99,7 @@ mod tests {
     fn it_jiggles() {
         let t = B::try_new::<0isize,10isize>(0isize).ok().unwrap();
         assert!(t.valid());
+        assert!(t.try_get::<isize>().is_ok());
 
         /*let t = B::Value::<{ 5 }, { 2isize }>(5);
         assert!(!t.valid());
