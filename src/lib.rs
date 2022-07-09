@@ -18,11 +18,11 @@ pub enum BoundErr {
 macro_rules! bound_idx {
     ($value_name:ident, $value_type:ty) => {
         pub trait BoundedValueTrait {
-            fn is_valid(&self) -> bool;
             // This leaks value_type so not possible to define for two types using same trait name in upper module scope. not fastest to parse either if impl for each
             // new cant be here either as it references mod_name::Value which is const for all
             // I don't think it's good basis for lib. The try_new is good addition tho to test initial values
-            fn get_bounds<const LOWER: $value_type, const UPPER: $value_type>() -> Range<$value_type> { Range { start: LOWER, end: UPPER } }
+            //fn get_bounds() -> Range<$value_type>;
+            fn is_valid(&self) -> bool;
             fn try_get<T: TryFrom<$value_type>>(&self) -> Result<T, BoundErr> {
                 if self.is_valid() {
                     /// SAFETY: the validity is checked before calling
@@ -46,18 +46,22 @@ macro_rules! bound_idx {
                 use crate::BoundedValueTrait;
                 use crate::BoundErr;
                 use crate::BoundErr::*;
+                use std::ops::Range;
                 pub struct Value <
                 const UPPER: $value_type,
                 const LOWER: $value_type> ($value_type);
                 pub fn try_new<const LOWER: $value_type, const UPPER: $value_type>(init_val: $value_type) -> Result<Value<UPPER, LOWER>,BoundErr> { Ok(Value::<UPPER, LOWER>(init_val)) }
+                impl<const UPPER: $value_type, const LOWER: $value_type> Value<UPPER,LOWER> {
+                    fn get_bounds() -> Range<$value_type> { Range { start: LOWER, end: UPPER } }
+                }
                 impl<const UPPER: $value_type, const LOWER: $value_type> BoundedValueTrait
                 for Value<UPPER, LOWER> {
                     fn is_valid(&self) -> bool {
-                        Self::get_bounds::<LOWER, UPPER>().contains(&self.0)
+                        Self::get_bounds().contains(&self.0)
                     }
                     fn try_set(&mut self, new_value: $value_type) -> Result<(), BoundErr> {
                         if self.is_valid() {
-                            if Self::get_bounds::<LOWER, UPPER>().contains(&new_value) {
+                            if Self::get_bounds().contains(&new_value) {
                                 self.0 = new_value as $value_type;
                                 Ok(())
                             } else {
