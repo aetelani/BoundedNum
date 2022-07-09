@@ -12,17 +12,29 @@ use crate::BoundErr::{BoundError, Invalid};
 pub enum BoundErr {
     BoundError,
     Invalid,
+    InvalidConversion,
 }
 
 macro_rules! bound_idx {
     ($value_name:ident, $value_type:ty) => {
         pub trait BoundedValueTrait {
-            fn valid(&self) -> bool;
+            fn is_valid(&self) -> bool;
             // This leaks value_type so not possible to define for two types using same trait name in upper module scope. not fastest to parse either if impl for each
             // new cant be here either as it references mod_name::Value which is const for all
             // I don't think it's good basis for lib. The try_new is good addition tho to test initial values
             fn get_bounds<const LOWER: $value_type, const UPPER: $value_type>() -> Range<$value_type> { Range { start: LOWER, end: UPPER } }
-            fn try_get<T: From<$value_type>>(&self) -> Result<T, BoundErr>;
+            fn try_get<T: TryFrom<$value_type>>(&self) -> Result<T, BoundErr> {
+                if self.is_valid() {
+                    /// SAFETY: the validity is checked before calling
+                    let value = unsafe { self.get_unchecked() };
+                    match T::try_from(value) {
+                        Ok(v) => Ok(v),
+                        Err(_) => Err(BoundErr::InvalidConversion)
+                    }
+                } else {
+                    Err(Invalid)
+                }
+            }
             fn try_set(&mut self, new_value: $value_type) -> Result<(), crate::BoundErr>;
             fn try_set_fn(&mut self, set_fn: &impl Fn(&mut Self)) -> Result<(), crate::BoundErr>;
             fn invalidate(&mut self);
@@ -40,34 +52,36 @@ macro_rules! bound_idx {
                 pub fn try_new<const LOWER: $value_type, const UPPER: $value_type>(init_val: $value_type) -> Result<Value<UPPER, LOWER>,BoundErr> { Ok(Value::<UPPER, LOWER>(init_val)) }
                 impl<const UPPER: $value_type, const LOWER: $value_type> BoundedValueTrait
                 for Value<UPPER, LOWER> {
-                    fn valid(&self) -> bool {
+                    fn is_valid(&self) -> bool {
                         Self::get_bounds::<LOWER, UPPER>().contains(&self.0)
                     }
-                    fn try_get<T: From<$value_type>>(&self) -> Result<T, BoundErr> {
-                        if self.valid() {
-                            Ok(self.0.into())
+                    fn try_set(&mut self, new_value: $value_type) -> Result<(), BoundErr> {
+                        if self.is_valid() {
+                            if Self::get_bounds::<LOWER, UPPER>().contains(&new_value) {
+                                self.0 = new_value as $value_type;
+                                Ok(())
+                            } else {
+                                Err(BoundError)
+                            }
                         } else {
                             Err(Invalid)
                         }
                     }
-                    fn try_set(&mut self, new_value: $value_type) -> Result<(), BoundErr> {
-                        if Self::get_bounds::<LOWER, UPPER>().contains(&new_value) {
-                            self.0 = new_value as $value_type;
-                            Ok(())
-                        } else {
-                            Err(BoundError)
-                        }
-                    }
+                    /// Set function uses provided api and can use unsafe methods as well.
+                    /// This function checks the if the end result is valid and return Result regarding the validity of contained value.
+                    /// It is not known if function changed contained value
+                    /// Should invalidate be called in error cases to or return out of bounds?
+                    /// If not invalidated it could be possible to set out-of bounds values in unsafe
                     fn try_set_fn(&mut self,set_fn: &impl Fn(&mut Self)) -> Result<(), BoundErr> {
                        set_fn(self);
-                        if self.valid() {
+                        if self.is_valid() {
                             Ok(())
                         } else {
                             Err(Invalid)
                         }
                     }
                     fn invalidate(&mut self) {
-                        // valid() is now false
+                        // is_valid() is now false
                         self.0 = UPPER;
                     }
                     unsafe fn set_unchecked(&mut self, new_value: $value_type) {
@@ -83,7 +97,7 @@ macro_rules! bound_idx {
             }
         }
     }
-bound_idx!(B, isize);
+bound_idx!(B, i16);
 
 #[cfg(test)]
 mod tests {
@@ -97,14 +111,14 @@ mod tests {
 
     #[test]
     fn it_jiggles() {
-        let t = B::try_new::<0isize,10isize>(0isize).ok().unwrap();
-        assert!(t.valid());
-        assert!(t.try_get::<isize>().is_ok());
+        let t = B::try_new::<0i16,200i16>(190i16).ok().unwrap();
+        assert!(t.is_valid());
+        assert!(!t.try_get::<i8>().is_ok());
 
         /*let t = B::Value::<{ 5 }, { 2isize }>(5);
-        assert!(!t.valid());
+        assert!(!t.is_valid());
         let t = B::Value::<{ isize::MAX }>(5);
-        assert!(t.valid());
+        assert!(t.is_valid());
         assert_eq!(
             size_of::<B::Value::<{ isize::MAX }, { isize::MIN }>>(),
             size_of::<isize>()
